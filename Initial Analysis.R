@@ -6,8 +6,9 @@ library(stringr)
 
 data <- read.csv("AllThreeJournals.txt", stringsAsFactors = FALSE)
 
-str(data)
+str(data) #72362 articles
 qplot(data$Year,binwidth = 1)
+#ggsave("numPubsPerYear.png")
 summary(data$Year)
 
 
@@ -19,11 +20,15 @@ smallData <- data[data$Type1 %in% c("Journal Article", "Case Reports", "Clinical
 "Clinical Trial  Phase III", "Clinical Trial  Phase IV", "Comparative Study", "Controlled Clinical Trial", "Evaluation Studies", "Guideline"),]
 str(smallData)
 
+table(smallData$Journal)
+
 summary(smallData)
 sd(smallData$numAuthor, na.rm = TRUE)
 
+
 ayo <- smallData
-ayo<-ayo[!is.na(ayo$numAuthor),]
+ayo<-ayo[!is.na(ayo$numAuthor),] #55085 articles with authors
+str(ayo) 
 ayo$ym<-paste(ayo$Year,ayo$Month)
 
 ayo$briefJournal <- ""
@@ -100,29 +105,63 @@ aid<-authorid[,c("first","init","last","uniqueID")]
 aid<-aid[!is.na(aid$uniqueID),]
 aid$fil<-paste(aid$first,aid$init,aid$last)
 aid$faF<-unlist(lapply(strsplit(aid$uniqueID," "),'[[',1))
+aid$faF<-unlist(lapply(strsplit(aid$faF,"-"),'[[',1))
+
 length(aid$faF)
 
-length(unique(aid$uniqueID))
+length(unique(aid$uniqueID)) #78558 unique authors
 
-sort(table(aid$uniqueID))
+head(sort(table(aid$uniqueID), decreasing = TRUE), 100)
 
 freqtable <- as.data.frame(table(aid$uniqueID))
 str(freqtable)
 summary(freqtable)
 sd(freqtable$Freq)
 
+
+freqtable2 <- as.data.frame(head(sort(table(aid$uniqueID), decreasing = TRUE), 101))
+str(freqtable2)
+summary(freqtable2)
+sd(freqtable$Freq2)
+
+#write.csv(freqtable2, "Top100Authors.csv")
+
+
+nameMF<-read.csv("Unknowns-All.csv", #"namegenders.csv",
+stringsAsFactors=FALSE)
+nameMF$confidence<-as.numeric(nameMF$probability)
+str(nameMF)
+
+aid2 <- merge(aid, nameMF, by.x = "faF", by.y = "names", all.x = TRUE)
+str(aid2)
+
+aid <- aid2
+
+
 dim(aid) #number of authors identified
 sum(!is.na(aid$gender)) #number with gender
+(sum(!is.na(aid$gender)) - 12319) / dim(aid) #proportion with gender
 sum(aid$gender=="female",na.rm=TRUE) #%female
-sum(aid$gender=="female",na.rm=TRUE)/sum(!is.na(aid$gender)) #^
+sum(aid$gender=="female",na.rm=TRUE)/ (sum(!is.na(aid$gender)) - 12319)  #^
 
 #first names - 120723
 length(unique(aid$faF))
 #unique first names - 12661
-write.csv(unique(aid$faF),'uniquefirsts.csv')
+#write.csv(unique(aid$faF),'uniquefirsts.csv')
 
 sort(table(aid$faF))
 
+aid$count <- 1
+uniqueAuthors <- ddply(aid,  .(uniqueID), summarize, gender = gender[1], totalcount <- sum(count))
+table(uniqueAuthors$gender)
+uniqueAuthors <- uniqueAuthors[!is.na(uniqueAuthors$gender),]
+uniqueAuthors <- uniqueAuthors[uniqueAuthors$gender != "unknown",]
+str(uniqueAuthors)
+colnames(uniqueAuthors) <- c("uniqueID", "gender", "totalcount")
+ggplot(data = uniqueAuthors, aes( x = totalcount, fill = gender)) + geom_histogram(binwidth = 1, position = "fill") + 
+xlab("Total Number of Publications") + ylab("Proportion") + 
+scale_x_continuous(breaks = c(0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75), limits = c(0,75))
+#ggsave("Figure1-GenderProportion by NumberOfPublications.png")
 
 
 
@@ -134,22 +173,40 @@ sort(table(aid$faF))
 
 
 
+####################################### Unknown Identification and Matching using Gender.IO #########################################
+
+nameMF<-read.csv("Unknowns-All.csv", #"namegenders.csv",
+stringsAsFactors=FALSE)
+
+nameMF$confidence<-as.numeric(nameMF$probability)
+
+uniqueFirstNamesFile <- read.csv("uniquefirsts.csv", stringsAsFactors = FALSE)
+str(uniqueFirstNamesFile )
+uniqueFirstNamesFile$Name <- unlist(lapply(strsplit(uniqueFirstNamesFile$Name,"-"), '[[',1))
+length(unique(uniqueFirstNamesFile$Name))
+uniqueFirstNames <- as.data.frame(unique(uniqueFirstNamesFile$Name))
+colnames(uniqueFirstNames) <- c("Name")
+str(uniqueFirstNames )
+
+data <- read.csv("uniquefirsts.csv", stringsAsFactors = FALSE)
 
 
+allNames <- merge(uniqueFirstNames,nameMF,by.x="Name",by.y="name",all.x = TRUE)
+str(allNames)
+
+unknowns <- allNames[is.na(allNames$confidence),]
+write.csv(unknowns$Name, "unknowns.csv")
 
 
-
-####################################### Run up to this time #########################################
-
-nameMF<-read.csv("namegenders.csv",stringsAsFactors=FALSE)
-nameMF$confidence<-as.numeric(nameMF$confidence)
-nameMF<-nameMF[nameMF$confidence>=0.6 & !is.na(nameMF$confidence),]
-nameMF<-nameMF[,c("name","gender")]
+#### I did not exclude low confidence names ###
+#
+#nameMF<-nameMF[nameMF$confidence>=0.6 & !is.na(nameMF$confidence),]
+#nameMF<-nameMF[,c("name","gender")]
 #unique matched first names - 7949
 
 
 
-aid<-merge(aid,nameMF,by.x="faF",by.y="name",all.x=TRUE)
+#aid<-merge(aid,nameMF,by.x="faF",by.y="name",all.x=TRUE)
 
 aidmatch<-aid[,c("fil","uniqueID","gender")]
 aidmatch<-aidmatch[!duplicated(aidmatch$fil),]
@@ -217,7 +274,7 @@ ayo$mfil12<-paste(ayo$midAuthorF12,ayo$midAuthorI12,ayo$midAuthorL12)
 ayo$mfil13<-paste(ayo$midAuthorF13,ayo$midAuthorI13,ayo$midAuthorL13)
 ayo$mfil14<-paste(ayo$midAuthorF14,ayo$midAuthorI14,ayo$midAuthorL14)
 ayo$mfil15<-paste(ayo$midAuthorF15,ayo$midAuthorI15,ayo$midAuthorL15)
-ayo$mfil<-ayo[,71:85]
+#ayo$mfil<-ayo[,71:85]
 
 
 ayo<-merge(ayo,aidmatchF,by.x="ffil",by.y="ffil",all.x=TRUE)
@@ -239,14 +296,13 @@ ayo<-merge(ayo,aidmatchM14,by.x='mfil14',by.y='mfil14',all.x=TRUE)
 ayo<-merge(ayo,aidmatchM15,by.x='mfil15',by.y='mfil15',all.x=TRUE)
 
 
-ayo$uniqueIDs<-ayo[,c(seq(87,119,2))]
+#ayo$uniqueIDs<-ayo[,c(seq(87,119,2))]
 
 
 aidtime<-aidmatch[!is.na(aidmatch$gender),]
 aidtime<-aidtime[-1]
 aidtime<-aidtime[!duplicated(aidtime$uniqueID),]
-#str(aidtime) 111365 authors, 50437 unique authors, 31095 unique authors with gender match
-length(aidmatch$uniqueID[!duplicated(aidmatch$uniqueID)])
+length(aidmatch$uniqueID[!duplicated(aidmatch$uniqueID)]) # THIS HAS THE UNKNOWNS
 
 
 aidtime$firstCount<-sapply(aidtime$uniqueID,function(c)sum(ayo$funiqueID==c,na.rm=TRUE))
@@ -259,6 +315,23 @@ aidtime$lastCount15<-sapply(aidtime$uniqueID,function(c)sum(ayo$suniqueID[ayo$Ye
 aidtime$midCount15<-sapply(aidtime$uniqueID,function(c)sum(ayo$Year>2010&(ayo$muniqueID1==c|ayo$muniqueID2==c|ayo$muniqueID3==c|ayo$muniqueID4==c|ayo$muniqueID5==c|ayo$muniqueID6==c|ayo$muniqueID7==c|ayo$muniqueID8==c|ayo$muniqueID9==c|ayo$muniqueID10==c|ayo$muniqueID11==c|ayo$muniqueID12==c|ayo$muniqueID13==c|ayo$muniqueID14==c),na.rm=TRUE))                    
 aidtime$allCount15<-aidtime$firstCount15+aidtime$lastCount15+aidtime$midCount15
 
+#write.csv(aidtime, "allAuthorsAndFreqPub-all.csv")
+#aidtime <- read.csv("allAuthorsAndFreqPub.csv")
+
+str(aidtime)
+
+###### MANUAL CLEANING, CLEANED UP GENDER MISMATCHES ######
+aidtime <- aidtime[-c(31289),]
+aidtime[aidtime$uniqueID=="Kim A Eagle",]$gender <- "male"
+aidtime[aidtime$uniqueID=="Robin S Roberts",]$gender <- "male"
+aidtime[aidtime$uniqueID=="Kerry L Lee",]$gender <- "male"
+aidtime[aidtime$uniqueID=="Shih-Ann Chen",]$gender <- "male"
+aidtime[aidtime$uniqueID=="Jean-Marc Lablanche",]$gender <- "male"
+aidtime[aidtime$uniqueID=="Jean-Philippe Collet",]$gender <- "male"
+aidtime[aidtime$uniqueID=="Jean L Rouleau",]$gender <- "male"
+aidtime[aidtime$uniqueID=="Jean-Marc Lablanche",]$gender <- "male"
+aidtime[aidtime$uniqueID=="Jean-Pierre Bassand",]$gender <- "male"
+
 
 aidtimeF<-aidtime[aidtime$gender=="female",]
 aidtimeM<-aidtime[aidtime$gender=="male",]
@@ -266,11 +339,135 @@ aidtimeM<-aidtime[aidtime$gender=="male",]
 head(aidtimeF[order(-aidtimeF$allCount),],25)
 head(aidtimeM[order(-aidtimeM$allCount),],25)
 
-write.csv(head(aidtimeF[order(-aidtimeF$allCount),],25),'topfemale.csv')
-write.csv(head(aidtimeM[order(-aidtimeM$allCount),],25),'topmale.csv')
+#head(sort(aidtime$allCount, decreasing = TRUE), 100)
 
-write.csv(head(aidtimeF[order(-aidtimeF$allCount15),],25),'topfemale15.csv')
-write.csv(head(aidtimeM[order(-aidtimeM$allCount15),],25),'topmale15.csv')
+
+top100 <- aidtime[aidtime$allCount %in% head(sort(aidtime$allCount, decreasing = TRUE), 100),]
+top100[top100$gender == "unknown",]$gender <- "male"
+str(top100)
+ggplot(data = top100, aes(x = reorder(uniqueID, allCount), y = allCount, fill = gender)) + geom_bar(stat = "identity") + theme_bw() + 
+scale_fill_brewer(palette="Set1", name = "Sex", labels=c("Female", "Male"))+   theme(axis.text.x=element_blank() , panel.grid.major.x = element_blank(),
+        axis.ticks.x=element_blank()) + xlab("Top 100 Most Prolific Authors") + ylab("Number of Publications in JACC, EHJ, and Circ")
+#ggsave("Top100AuthorsBySex.png", width = 17, height = 7.5)
+
+#write.csv(head(aidtimeF[order(-aidtimeF$allCount),],25),'topfemale.csv')
+#write.csv(head(aidtimeM[order(-aidtimeM$allCount),],25),'topmale.csv')
+
+#write.csv(head(aidtimeF[order(-aidtimeF$allCount15),],25),'topfemale15.csv')
+#write.csv(head(aidtimeM[order(-aidtimeM$allCount15),],25),'topmale15.csv')
+
+#write.csv(ayo, "allArticles.csv")
+
+
+ggplot(data = ayo, aes( x = Year, fill = fgender)) + geom_histogram(binwidth = 1, position = "fill") + 
+xlab("Year") + ylab("Proportion")
+#ggsave("FirstAuthorGenderOverTime-Raw.png")
+ggplot(data = ayo[ayo$fgender %in% c("male","female"),], aes( x = Year, fill = fgender)) + geom_bar(width = 0.9, position = "fill") + 
+xlab("Year") + ylab("Proportion") + theme_bw() + 
+scale_fill_brewer(palette="Set1", name = "Sex", labels=c("Female", "Male"))+   theme(panel.grid.minor.y = element_blank(),
+panel.grid.major.x = element_blank(), axis.ticks.y=element_blank())
+#ggsave("FirstAuthorGenderOverTime.png")
+
+ggplot(data = ayo, aes( x = Year, fill = sgender)) + geom_histogram(binwidth = 1, position = "fill") + 
+xlab("Year") + ylab("Proportion")
+#ggsave("LastAuthorGenderOverTime-Raw.png")
+
+ggplot(data = ayo[ayo$sgender %in% c("male","female"),], aes( x = Year, fill = sgender)) + geom_bar(width = 0.9, position = "fill") + 
+xlab("Year") + ylab("Proportion") + theme_bw() + 
+scale_fill_brewer(palette="Set1", name = "Sex", labels=c("Female", "Male"))+   theme(panel.grid.minor.y = element_blank(),
+panel.grid.major.x = element_blank(), axis.ticks.y=element_blank())
+#ggsave("LastAuthorGenderOverTime.png")
+
+
+ayo$fgenderAsBinary <- NA
+ayo[!is.na(ayo$fgender) & ayo$fgender == "male",]$fgenderAsBinary <- 1
+ayo[!is.na(ayo$fgender) & ayo$fgender == "female",]$fgenderAsBinary <- 0
+model <- lm(data = ayo, fgenderAsBinary ~ Year)
+summary(model)
+ayo$sgenderAsBinary <- NA
+ayo[!is.na(ayo$sgender) & ayo$sgender == "male",]$sgenderAsBinary <- 1
+ayo[!is.na(ayo$sgender) & ayo$sgender == "female",]$sgenderAsBinary <- 0
+model <- lm(data = ayo, sgenderAsBinary ~ Year)
+summary(model)
+
+
+ggplot(data = aidtime[aidtime$gender %in% c("male","female"),], aes( x = allCount, fill = gender)) + geom_histogram(binwidth = 1,  position = "fill") + 
+scale_x_continuous(breaks = c(0,5,10,15,20,25,30,35,40,45,50,55,60,65,70), limits = c(0,70)) + theme_bw() + 
+scale_fill_brewer(palette="Set1", name = "Sex", labels=c("Female", "Male"))+   theme(panel.grid.major.y = element_blank(),
+        axis.ticks.y=element_blank()) + ylab("Proportion Female Authors") + xlab("Number of Publications in JACC, EHJ, and Circ")
+#ggsave("GenderProportion by NumberOfPublications.png", width = 17, height = 7.5)
+model <- glm(data = aidtime, allCount ~ gender)
+summary(model)
+
+
+
+
+
+
+
+
+####### Number of publications by each journal and author
+
+str(ayo)
+table(ayo$fgender)
+table(ayo[ayo$Journal == "European heart journal",]$fgender)
+table(ayo[ayo$Journal == "Circulation",]$fgender)
+table(ayo[ayo$Journal == "Journal of the American College of Cardiology",]$fgender)
+
+EHJ <- ayo[ayo$Journal == "European heart journal",]
+EHJbyFAuthor <- ddply(EHJ, .(funiqueID),  summarize, fgender = fgender[1])
+str(EHJbyFAuthor)
+table(EHJbyFAuthor$fgender, useNA = "ifany")
+
+EHJbySAuthor <- ddply(EHJ, .(suniqueID),  summarize, sgender = sgender[1])
+str(EHJbySAuthor)
+table(EHJbySAuthor$sgender, useNA = "ifany")
+
+
+Circ <- ayo[ayo$Journal == "Circulation",]
+CircbyFAuthor <- ddply(Circ , .(funiqueID),  summarize, fgender = fgender[1])
+str(CircbyFAuthor )
+table(CircbyFAuthor$fgender, useNA = "ifany")
+
+CircbySAuthor <- ddply(Circ , .(suniqueID),  summarize, sgender = sgender[1])
+str(CircbySAuthor)
+table(CircbySAuthor$sgender, useNA = "ifany")
+
+
+JACC <- ayo[ayo$Journal == "Journal of the American College of Cardiology",]
+JACCbyFAuthor <- ddply(JACC, .(funiqueID),  summarize, fgender = fgender[1])
+str(JACCbyFAuthor )
+table(JACCbyFAuthor$fgender, useNA = "ifany")
+
+JACCbySAuthor <- ddply(JACC, .(suniqueID),  summarize, sgender = sgender[1])
+str(JACCbySAuthor)
+table(JACCbySAuthor$sgender, useNA = "ifany")
+
+
+ALLbyFAuthor <- ddply(ayo, .(funiqueID),  summarize, fgender = fgender[1])
+str(ALLbyFAuthor)
+table(ALLbyFAuthor$fgender, useNA = "ifany")
+
+ALLbySAuthor <- ddply(ayo, .(suniqueID),  summarize, sgender = sgender[1])
+str(ALLbySAuthor)
+table(ALLbySAuthor$sgender, useNA = "ifany")
+
+
+# First Authors
+x <- matrix(c(23629 ,  4434, 71345 - 23629, 16613 - 4434), ncol = 2)
+x <- matrix(c(23629 ,  71345 - 23629, 4434,  16613 - 4434), ncol = 2)
+chisq.test(x)
+
+
+# Senior Authors
+
+x <- matrix(c(23629 ,  2193, 71345 - 23629, 11160 - 2193), ncol = 2)
+x <- matrix(c(23629 ,  71345 - 23629, 2193,  11160 - 2193), ncol = 2)
+chisq.test(x)
+
+
+###################### STOP HERE FOR SECOND PHASE #############
+
 
 
 
@@ -283,6 +480,7 @@ dim(aidtime[aidtime$allCount==0,])
 #aidtime<-aidtime[aidtime$allCount!=0,]
 
 #aidtime15<-aidtime[aidtime$allCount15!=0,]
+install.packages(c("epicalc"))
 library(epicalc)
 use(aidtime)
 avgpub<-tableStack(vars=c(firstCount,midCount,lastCount,allCount),iqr='none',by=gender)
